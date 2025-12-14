@@ -4,7 +4,7 @@ import React, { useState } from 'react';
 import { calculateGasLoad } from './gasLogic'; 
 
 export default function Home() {
-  const [roomType, setRoomType] = useState('icu_standard');
+  const [roomType, setRoomType] = useState('ward_single_4bed');
   const [beds, setBeds] = useState('');
 
   const data = calculateGasLoad(roomType, beds);
@@ -86,11 +86,25 @@ export default function Home() {
                         onChange={(e) => setRoomType(e.target.value)}
                         className="w-full p-4 pr-10 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-900 text-lg font-bold shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none appearance-none cursor-pointer transition-all"
                     >
-                        <option value="ward">General Ward (In-patient)</option>
-                        <option value="icu">Critical Care / ICU</option>
-                        <option value="theatre">Operating Theatre Suite</option>
-                        <option value="recovery">Post-Anaesthesia Recovery</option>
-                        <option value="resus">A&E Resuscitation</option>
+                        <optgroup label="In-Patient">
+                            <option value="ward_single_4bed">General Ward (Single/4-Bed)</option>
+                            <option value="ward_department">Whole Ward Department</option>
+                            <option value="maternity_ldrp">Maternity (LDRP)</option>
+                            <option value="neonatal">Neonatal (SCBU)</option>
+                            <option value="critical_care">Critical Care (ICU/CCU/HDU)</option>
+                            <option value="renal">Renal Dialysis</option>
+                        </optgroup>
+                        <optgroup label="Operating & Procedures">
+                            <option value="operating_rooms">Operating Rooms (Theatres)</option>
+                            <option value="recovery">Post-Anaesthesia Recovery</option>
+                            <option value="maternity_operating">Maternity Operating Suite</option>
+                            <option value="radiology">Radiology / Anaesthetic Rooms</option>
+                        </optgroup>
+                        <optgroup label="Emergency">
+                            <option value="ae_resus">A&E Resuscitation</option>
+                            <option value="ae_major_treatment">A&E Major Treatment</option>
+                            <option value="ae_treatment_cubicle">A&E Cubicle</option>
+                        </optgroup>
                     </select>
                     {/* Custom Arrow Icon */}
                     <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500">
@@ -102,7 +116,7 @@ export default function Home() {
             {/* BED COUNT INPUT */}
             <div>
                 <label className="block text-slate-500 font-bold mb-3 uppercase text-xs tracking-widest">
-                    {roomType === 'theatre' ? 'Number of Suites' : 'Number of Beds / Spaces'}
+                    {roomType.includes('operating') || roomType === 'maternity_operating' ? 'Number of Suites (nS)' : 'Number of Beds/Spaces (n)'}
                 </label>
                 <input
                     type="number"
