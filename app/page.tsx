@@ -1,7 +1,7 @@
 'use client'; 
 
 import React, { useState } from 'react';
-import { calculateGasLoad } from './gasLogic'; // Check path matches where you put the file
+import { calculateGasLoad } from './gasLogic'; 
 
 export default function Home() {
   const [roomType, setRoomType] = useState('icu_standard');
@@ -10,93 +10,107 @@ export default function Home() {
   const data = calculateGasLoad(roomType, beds);
 
   // Helper component to render a single gas card
-  const GasCard = ({ label, colorTheme, gasData }) => {
+  const GasCard = ({ label, colorTheme, gasData }: { label: string, colorTheme: string, gasData: any }) => {
+    
     // Color mapping for dynamic styles
-    const styles = {
-      blue: "bg-blue-900 border-blue-400 text-black-100 font-bold shadow-sm",
-      slate: "bg-slate-800 border-slate-400 text-black-100 font-bold shadow-sm",
-      yellow: "bg-yellow-500 border-yellow-200 text-black-900 font-bold shadow-sm",
+    const styles: { [key: string]: string } = {
+      blue: "bg-blue-900 border-blue-500 text-white",      // Oxygen
+      slate: "bg-slate-800 border-slate-500 text-white",    // Medical Air
+      emerald: "bg-emerald-800 border-emerald-500 text-white", // Surgical Air
+      yellow: "bg-yellow-500 border-yellow-300 text-yellow-900", // Vacuum
     };
     
-    const activeStyle = styles[colorTheme];
+    const activeStyle = styles[colorTheme] || styles.slate;
 
     return (
-      <div className={`${activeStyle} p-6 rounded-2xl shadow-lg border-l-8 flex flex-col justify-between h-full`}>
+      <div className={`${activeStyle} p-6 rounded-2xl shadow-lg border-t-8 flex flex-col justify-between h-full transition-transform hover:scale-[1.02]`}>
         <div>
-          <h3 className="font-bold uppercase text-sm opacity-80 mb-2">{label}</h3>
-          <div className="text-4xl font-extrabold mb-1">
-            {gasData.flow} <span className="text-lg font-normal opacity-70">L/min</span>
+          <div className="flex justify-between items-start mb-2">
+            <h3 className="font-bold uppercase text-sm opacity-90 tracking-wider">{label}</h3>
           </div>
-          <p className="text-xs font-medium opacity-80 italic mb-4">
-            {gasData.note || "No flow required"}
-          </p>
+          
+          <div className="text-5xl font-black mb-2 tracking-tighter">
+            {gasData.flow} <span className="text-lg font-medium opacity-60">L/min</span>
+          </div>
+          
+          {/* Formula Display */}
+          <div className="mb-6 p-2 bg-black/10 rounded text-xs font-mono opacity-80 break-words">
+            {gasData.formula || "No formula applied"}
+          </div>
         </div>
         
         {/* Pipe Recommendation Badge */}
-        {gasData.flow > 0 && (
-          <div className="bg-white rounded-lg p-3 text-center shadow-md">
-            
-            <span className="text-xs font-bold uppercase block text-slate-400 mb-1 tracking-wider">
+        {gasData.flow > 0 ? (
+          <div className="bg-white rounded-xl p-4 text-center shadow-lg transform translate-y-2">
+            <span className="text-xs font-bold uppercase block text-slate-400 mb-1 tracking-widest">
               Recommended Pipe
             </span>
-            
-            {/* THIS IS THE PART WE MADE DARKER AND BOLDER */}
-            <span className="font-sans font-black text-2xl text-slate-900 block">
+            <span className="font-black text-2xl text-slate-900 block tracking-tight">
               {gasData.pipe}
             </span>
-            
           </div>
+        ) : (
+           <div className="bg-white/10 rounded-xl p-4 text-center border-2 border-dashed border-white/20">
+            <span className="text-sm font-medium opacity-70">System Not Required</span>
+           </div>
         )}
       </div>
     );
   };
 
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center p-10 font-sans">
+    <div className="min-h-screen bg-slate-100 flex flex-col items-center p-6 md:p-10 font-sans text-slate-900">
       
       {/* HEADER */}
-      <div className="text-center mb-10">
-        <h1 className="text-5xl font-extrabold text-blue-900 mb-2 tracking-tight">
-            UbiFlow AI
+      <div className="text-center mb-12 max-w-2xl">
+        <h1 className="text-5xl md:text-6xl font-black text-slate-900 mb-3 tracking-tighter">
+            UbiFlow<span className="text-blue-600">AI</span>
         </h1>
-        <p className="text-slate-600 text-xl font-medium">
-            HTM 02-01 Table 12 Calculator
+        <p className="text-slate-500 text-lg md:text-xl font-medium">
+            HTM 02-01 Engineering Calculator
         </p>
       </div>
 
-      {/* INPUTS */}
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-5xl border border-slate-200 mb-8">
+      {/* INPUTS PANEL */}
+      <div className="bg-white p-8 rounded-3xl shadow-2xl w-full max-w-6xl border border-slate-200 mb-12">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
             
-            {/* ROOM TYPE */}
+            {/* ROOM TYPE SELECTOR */}
             <div>
-                <label className="block text-slate-900 font-bold mb-3 uppercase text-sm tracking-wider">
-                    Clinical Area
+                <label className="block text-slate-500 font-bold mb-3 uppercase text-xs tracking-widest">
+                    Clinical Department / Area
                 </label>
-                <select 
-                    value={roomType}
-                    onChange={(e) => setRoomType(e.target.value)}
-                    className="w-full p-4 rounded-xl border-2 border-slate-300 bg-slate-50 text-slate-900 text-lg font-bold shadow-sm focus:border-blue-600 focus:ring-blue-600 outline-none cursor-pointer"
-                >
-                    <option value="ward">General Ward (Low Dependency)</option>
-                    <option value="icu_standard">ICU - Standard (Table 12)</option>
-                    <option value="icu_high_flow">ICU - High Flow / Covid</option>
-                    <option value="theatre">Operating Theatre</option>
-                </select>
+                <div className="relative">
+                    <select 
+                        value={roomType}
+                        onChange={(e) => setRoomType(e.target.value)}
+                        className="w-full p-4 pr-10 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-900 text-lg font-bold shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none appearance-none cursor-pointer transition-all"
+                    >
+                        <option value="ward">General Ward (In-patient)</option>
+                        <option value="icu">Critical Care / ICU</option>
+                        <option value="theatre">Operating Theatre Suite</option>
+                        <option value="recovery">Post-Anaesthesia Recovery</option>
+                        <option value="resus">A&E Resuscitation</option>
+                    </select>
+                    {/* Custom Arrow Icon */}
+                    <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M19 9l-7 7-7-7"></path></svg>
+                    </div>
+                </div>
             </div>
 
-            {/* BED COUNT */}
+            {/* BED COUNT INPUT */}
             <div>
-                <label className="block text-slate-900 font-bold mb-3 uppercase text-sm tracking-wider">
-                    {roomType === 'theatre' ? 'Number of Theatres' : 'Number of Beds'}
+                <label className="block text-slate-500 font-bold mb-3 uppercase text-xs tracking-widest">
+                    {roomType === 'theatre' ? 'Number of Suites' : 'Number of Beds / Spaces'}
                 </label>
                 <input
                     type="number"
                     value={beds}
                     onChange={(e) => setBeds(e.target.value)}
-                    placeholder="0"
+                    placeholder="Enter quantity..."
                     min="0"
-                    className="w-full p-4 rounded-xl border-2 border-slate-300 bg-slate-50 text-slate-900 text-lg font-bold shadow-sm focus:border-blue-600 focus:ring-blue-600 outline-none placeholder:text-slate-400"
+                    className="w-full p-4 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-900 text-lg font-bold shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none placeholder:text-slate-300 transition-all"
                 />
             </div>
         </div>
@@ -104,14 +118,33 @@ export default function Home() {
 
       {/* RESULTS GRID */}
       {beds && parseInt(beds) > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 w-full max-w-5xl">
-            <GasCard label="Oxygen (O₂)" colorTheme="blue" gasData={data.oxygen} />
-            <GasCard label="Medical Air (MA4)" colorTheme="slate" gasData={data.air} />
-            <GasCard label="Vacuum (Vac)" colorTheme="yellow" gasData={data.vacuum} />
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 w-full max-w-7xl">
+            <GasCard 
+                label="Oxygen (O₂)" 
+                colorTheme="blue" 
+                gasData={data.oxygen} 
+            />
+            <GasCard 
+                label="Medical Air (MA4)" 
+                colorTheme="slate" 
+                gasData={data.medicalAir} 
+            />
+            <GasCard 
+                label="Surgical Air (SA7)" 
+                colorTheme="emerald" 
+                gasData={data.surgicalAir} 
+            />
+            <GasCard 
+                label="Vacuum (Vac)" 
+                colorTheme="yellow" 
+                gasData={data.vacuum} 
+            />
           </div>
       ) : (
-          <div className="text-slate-400 font-medium italic mt-4">
-              Enter details above to see flow rates and pipe sizing.
+          <div className="text-center py-12 px-6 rounded-3xl border-2 border-dashed border-slate-300 w-full max-w-4xl">
+              <p className="text-slate-400 font-medium text-lg">
+                  Please enter the number of beds or suites above to calculate HTM 02-01 loads.
+              </p>
           </div>
       )}
 

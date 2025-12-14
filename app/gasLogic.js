@@ -1,93 +1,184 @@
 // utils/gasLogic.js
 
-// 1. Helper: The Pipe Sizer (Your code)
-export const recommendPipe = (flowRate) => {
-    if (flowRate <= 0) return "N/A";
-    if (flowRate <= 40) return "12mm Copper";
-    if (flowRate <= 110) return "15mm Copper";
-    if (flowRate <= 350) return "22mm Copper";
-    if (flowRate <= 800) return "28mm Copper";
-    if (flowRate <= 1500) return "35mm Copper";
-    return "42mm+ (Detailed Calc Req)";
+/**
+ * PIPE SIZING HELPER
+ * Based on HTM 02-01 Part A - Appendix G - Pressure Loss Tables
+ * We use the 15m column (typical branch length) and standard allowable pressure drops:
+ * - 400kPa (Oxygen/Air): Table A2 @ ~14kPa drop
+ * - 700kPa (Surgical Air): Table A3 @ ~14kPa drop
+ * - Vacuum: Table A5 @ ~3.9kPa (30mmHg) drop
+ */
+const getPipeSize = (flow, type) => {
+  if (flow <= 0) return "N/A";
+
+  // Data from Table A2 (Medical Air/Oxygen 400kPa) - 15m run
+  if (type === "oxygen" || type === "medical_air") {
+    if (flow <= 307) return "12mm Copper"; // Table A2, 12mm @ 15m
+    if (flow <= 572) return "15mm Copper"; // Table A2, 15mm @ 15m
+    if (flow <= 1656) return "22mm Copper"; // Table A2, 22mm @ 15m
+    if (flow <= 3320) return "28mm Copper"; // Table A2, 28mm @ 15m
+    if (flow <= 5943) return "35mm Copper"; // Table A2, 35mm @ 15m
+    if (flow <= 9963) return "42mm Copper"; // Table A2, 42mm @ 15m
+    return "54mm+ (Consult Engineer)";
+  }
+
+  // Data from Table A3 (Surgical Air 700kPa) - 15m run
+  if (type === "surgical_air") {
+    if (flow <= 405) return "12mm Copper"; // Table A3
+    if (flow <= 754) return "15mm Copper"; // Table A3
+    if (flow <= 2175) return "22mm Copper"; // Table A3
+    if (flow <= 4351) return "28mm Copper"; // Table A3
+    return "35mm+ (Consult Engineer)";
+  }
+
+  // Data from Table A5 (Vacuum) - 15m run @ 3.9kPa drop
+  if (type === "vacuum") {
+    if (flow <= 60) return "12mm Copper"; // Table A5
+    if (flow <= 113) return "15mm Copper"; // Table A5
+    if (flow <= 330) return "22mm Copper"; // Table A5
+    if (flow <= 666) return "28mm Copper"; // Table A5
+    if (flow <= 1198) return "35mm Copper"; // Table A5
+    if (flow <= 2016) return "42mm Copper"; // Table A5
+    return "54mm+ (Consult Engineer)";
+  }
+
+  return "Calc Req";
+};
+
+/**
+ * MAIN CALCULATION ENGINE
+ * Formulas derived from HTM 02-01 Tables 13, 18, 20, 21
+ */
+export const calculateGasLoad = (roomType, bedCount) => {
+  // n = number of beds/treatment spaces
+  const n = parseFloat(bedCount) || 0;
+
+  // Initialize results
+  let results = {
+    oxygen: { flow: 0, formula: "", pipe: "" },
+    medicalAir: { flow: 0, formula: "", pipe: "" }, // MA4
+    surgicalAir: { flow: 0, formula: "", pipe: "" }, // SA7
+    vacuum: { flow: 0, formula: "", pipe: "" }
   };
+
+  if (n <= 0) return results;
+
+  switch (roomType) {
+    // --- 1. IN-PATIENT WARD (Tables 13, 18, 21) ---
+    case "ward":
+      // Oxygen: Table 13 (In-patient accommodation)
+      // Qw = 10 + ((n-1) * 6) / 4
+      results.oxygen.flow = 10 + ((n - 1) * 6) / 4;
+      results.oxygen.formula = "Q = 10 + [(n-1)×6]/4";
+
+      // Medical Air: Table 18 (In-patient accommodation)
+      // Qw = 20 + ((n-1) * 10) / 4
+      results.medicalAir.flow = 20 + ((n - 1) * 10) / 4;
+      results.medicalAir.formula = "Q = 20 + [(n-1)×10]/4";
+
+      // Vacuum: Table 21 (Ward unit)
+      // Q = 40 (Flat rate for the ward unit, generally not per bed unless multi-ward)
+      // Note: If n > 1 we assume it's one ward unit.
+      results.vacuum.flow = 40; 
+      results.vacuum.formula = "Q = 40 (Per Ward Unit)";
+      break;
+
+    // --- 2. CRITICAL CARE / ICU (Tables 13, 18, 21) ---
+    case "icu":
+      // Oxygen: Table 13 (Critical care areas)
+      // Q = 10 + [(n-1) * 6 * 3] / 4  -> Simplifies to 10 + (n-1)*4.5
+      results.oxygen.flow = 10 + ((n - 1) * 6 * 3) / 4;
+      results.oxygen.formula = "Q = 10 + [(n-1)×6]×¾";
+
+      // Medical Air: Table 18 (Critical care areas)
+      // Q = 80 + [(n-1) * 80] / 2
+      results.medicalAir.flow = 80 + ((n - 1) * 80) / 2;
+      results.medicalAir.formula = "Q = 80 + [(n-1)×80]/2";
+
+      // Vacuum: Table 21 (Critical care areas)
+      // Q = 40 + [(n-1) * 40] / 4
+      results.vacuum.flow = 40 + ((n - 1) * 40) / 4;
+      results.vacuum.formula = "Q = 40 + [(n-1)×40]/4";
+      break;
+
+    // --- 3. OPERATING THEATRE SUITE (Tables 13, 18, 20, 21) ---
+    case "theatre":
+      // NOTE: Here 'n' is treated as nS (Number of Suites)
+      
+      // Oxygen: Table 13 (Operating suites - Anaesthetist)
+      // Q = 100 + (nS - 1) * 6
+      results.oxygen.flow = 100 + (n - 1) * 6;
+      results.oxygen.formula = "Q = 100 + (nS-1)×6";
+
+      // Medical Air: Table 18 (Operating suites - Anaesthetist)
+      // Q = 40 + [(nS - 1) * 10] / 4
+      results.medicalAir.flow = 40 + ((n - 1) * 10) / 4;
+      results.medicalAir.formula = "Q = 40 + [(nS-1)×10]/4";
+
+      // Surgical Air: Table 20 (Operating room)
+      // Assuming <4 rooms for the formula: Q = 350 + [(n-1) * 350] / 2
+      results.surgicalAir.flow = 350 + ((n - 1) * 350) / 2;
+      results.surgicalAir.formula = "Q = 350 + [(n-1)×350]/2";
+
+      // Vacuum: Table 21 (Operating suites)
+      // Q = 80 + [(nS - 1) * 80] / 2
+      results.vacuum.flow = 80 + ((n - 1) * 80) / 2;
+      results.vacuum.formula = "Q = 80 + [(nS-1)×80]/2";
+      break;
+
+    // --- 4. RECOVERY / POST-ANAESTHESIA (Tables 13, 18, 21) ---
+    case "recovery":
+      // Oxygen: Table 13 (Operating - Post-anaesthesia recovery)
+      // Q = 10 + (n - 1) * 6
+      results.oxygen.flow = 10 + (n - 1) * 6;
+      results.oxygen.formula = "Q = 10 + (n-1)×6";
+
+      // Medical Air: Table 18 (Operating - Post-anaesthesia recovery)
+      // Q = 40 + [(n - 1) * 40] / 4
+      results.medicalAir.flow = 40 + ((n - 1) * 40) / 4;
+      results.medicalAir.formula = "Q = 40 + [(n-1)×40]/4";
+
+      // Vacuum: Table 21 (Operating - Post-anaesthesia recovery)
+      // Q = 40 + [(n - 1) * 40] / 4
+      results.vacuum.flow = 40 + ((n - 1) * 40) / 4;
+      results.vacuum.formula = "Q = 40 + [(n-1)×40]/4";
+      break;
+
+    // --- 5. RESUSCITATION / A&E (Tables 13, 18, 21) ---
+    case "resus":
+      // Oxygen: Table 13 (A&E Resuscitation)
+      // Q = 100 + [(n - 1) * 6] / 4
+      results.oxygen.flow = 100 + ((n - 1) * 6) / 4;
+      results.oxygen.formula = "Q = 100 + [(n-1)×6]/4";
+
+      // Medical Air: Table 18 (A&E Resuscitation)
+      // Q = 40 + [(n - 1) * 20] / 4
+      results.medicalAir.flow = 40 + ((n - 1) * 20) / 4;
+      results.medicalAir.formula = "Q = 40 + [(n-1)×20]/4";
+
+      // Vacuum: Table 21 (A&E Resuscitation)
+      // Q = 40 + [(n - 1) * 40] / 4
+      results.vacuum.flow = 40 + ((n - 1) * 40) / 4;
+      results.vacuum.formula = "Q = 40 + [(n-1)×40]/4";
+      break;
+
+    default:
+      break;
+  }
+
+  // --- FINAL CALCULATIONS ---
   
-  // 2. Main Calculation Engine
-  export const calculateGasLoad = (roomType, bedCount) => {
-    const n = parseFloat(bedCount) || 0;
-    
-    // Initialize results structure
-    let results = {
-      oxygen: { flow: 0, note: "", pipe: "" },
-      air: { flow: 0, note: "", pipe: "" },
-      vacuum: { flow: 0, note: "", pipe: "" }
-    };
-  
-    if (n <= 0) return results;
-  
-    // --- OXYGEN LOGIC (Using your specific HTM formulas) ---
-    switch (roomType) {
-      case "ward":
-        // Formula: 10 + ((n-1) * 6) / 4
-        results.oxygen.flow = 10 + ((n - 1) * 6) / 4;
-        results.oxygen.note = "HTM 02-01 Ward Diversity (Low Flow)";
-        
-        // Ward Vacuum: Approx 5L/min with diversity
-        results.vacuum.flow = 5 + ((n - 1) * 5) * 0.3; // 30% diversity on remaining
-        results.vacuum.note = "Standard Ward Suction";
-        break;
-  
-      case "icu_standard":
-        // Formula: 20 + ((n-1) * 10)
-        results.oxygen.flow = 20 + ((n - 1) * 10);
-        results.oxygen.note = "HTM 02-01 Critical Care Diversity";
-        
-        // ICU Air: Ventilators require MA4 (approx 20L/min)
-        results.air.flow = n * 20; 
-        results.air.note = "Ventilator Drive Gas (MA4)";
-  
-        // ICU Vacuum: High suction (approx 40L/min)
-        results.vacuum.flow = n * 40;
-        break;
-  
-      case "icu_high_flow":
-        // Formula: 60L per bed flat
-        results.oxygen.flow = n * 60;
-        results.oxygen.note = "High Flow Protocol (No Diversity)";
-        
-        // High Flow often implies heavy ventilator use
-        results.air.flow = n * 40; // Higher buffer for MA4
-        results.air.note = "High Dependency Vent Support";
-  
-        results.vacuum.flow = n * 50; 
-        break;
-  
-      case "theatre":
-        // Formula: 100 + ((n-1) * 20)
-        results.oxygen.flow = 100 + ((n - 1) * 20);
-        results.oxygen.note = "Surgical Priority Load";
-        
-        // Theatre Air: Tools & Anesthesia (High)
-        results.air.flow = n * 40;
-        results.air.note = "Surgical Tools / Anesthesia";
-  
-        // Theatre Vacuum: Scavenging + Suction (Very High)
-        results.vacuum.flow = n * 120;
-        break;
-        
-      default:
-        break;
-    }
-  
-    // --- FINAL PIPE SIZING ---
-    // We attach the pipe recommendation to every gas result here
-    results.oxygen.pipe = recommendPipe(results.oxygen.flow);
-    results.air.pipe = recommendPipe(results.air.flow);
-    results.vacuum.pipe = recommendPipe(results.vacuum.flow);
-  
-    // Round flows for clean display
-    results.oxygen.flow = Math.ceil(results.oxygen.flow);
-    results.air.flow = Math.ceil(results.air.flow);
-    results.vacuum.flow = Math.ceil(results.vacuum.flow);
-  
-    return results;
-  };
+  // 1. Round up flows
+  results.oxygen.flow = Math.ceil(results.oxygen.flow);
+  results.medicalAir.flow = Math.ceil(results.medicalAir.flow);
+  results.surgicalAir.flow = Math.ceil(results.surgicalAir.flow);
+  results.vacuum.flow = Math.ceil(results.vacuum.flow);
+
+  // 2. Determine Pipe Sizes
+  results.oxygen.pipe = getPipeSize(results.oxygen.flow, "oxygen");
+  results.medicalAir.pipe = getPipeSize(results.medicalAir.flow, "medical_air");
+  results.surgicalAir.pipe = getPipeSize(results.surgicalAir.flow, "surgical_air");
+  results.vacuum.pipe = getPipeSize(results.vacuum.flow, "vacuum");
+
+  return results;
+};
