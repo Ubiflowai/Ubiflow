@@ -5,12 +5,9 @@ import { calculateGasLoad } from './gasLogic';
 import dynamic from 'next/dynamic';
 
 // Lazy load the designer so it doesn't crash the server
-
-
-// Correct path: goes up (..) out of 'app' folder, then into 'components'
 const FloorPlanDesigner = dynamic(() => import('../components/FloorPlanDesigner'), {
   ssr: false,
-  loading: () => <div className="h-96 w-full bg-slate-100 rounded-xl animate-pulse">Loading Visualizer...</div>
+  loading: () => <div className="h-96 w-full bg-slate-100 rounded-xl animate-pulse mt-12">Loading Visualizer...</div>
 });
 
 export default function Home() {
@@ -171,6 +168,11 @@ export default function Home() {
               </p>
           </div>
       )}
+
+      {/* --- VISUAL FLOOR PLAN DESIGNER (ADDED HERE) --- */}
+      <div className="w-full max-w-6xl mt-12 mb-20">
+        <FloorPlanDesigner />
+      </div>
 
     </div>
   );
