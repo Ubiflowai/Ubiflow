@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Stage, Layer, Image as KonvaImage, Circle, Line, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 
@@ -10,7 +10,13 @@ const URLImage = ({ src, scale }: { src: string, scale: number }) => {
   return <KonvaImage image={image} scaleX={scale} scaleY={scale} />;
 };
 
-export default function FloorPlanDesigner() {
+// Define the "Props" we expect from the parent (page.tsx)
+interface DesignerProps {
+  currentRoomType: string;         // The department selected in the dropdown
+  onBedCountChange: (n: number) => void; // Function to update the main calculator
+}
+
+export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }: DesignerProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   
   // State for Scale (Calibration)
@@ -24,6 +30,14 @@ export default function FloorPlanDesigner() {
   const [drawMode, setDrawMode] = useState(false);
   const [selectedStartId, setSelectedStartId] = useState<number | null>(null);
 
+  // --- EFFECT: SYNC BED COUNT ---
+  // Whenever 'items' changes, we count the beds and update the parent calculator
+  useEffect(() => {
+    // Filter out "Source" items, only count Beds
+    const bedCount = items.filter(i => i.type !== 'Source').length;
+    onBedCountChange(bedCount);
+  }, [items, onBedCountChange]);
+
   // 1. Handle Upload
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -33,13 +47,22 @@ export default function FloorPlanDesigner() {
     }
   };
 
-  // 2. Add Items
+  // 2. Add Items (With Dynamic Labels)
   const addItem = (type: 'Bed' | 'Source') => {
+    // Generate a label. If it's a bed, use the room type (e.g. "ICU")
+    let label: string = type;
+    if (type === 'Bed') {
+        // Convert "ward_single_4bed" -> "WARD" or "ICU"
+        const cleanName = currentRoomType.split('_')[0].toUpperCase(); 
+        label = `${cleanName}`; 
+    }
+
     const newItem = {
       id: Date.now(),
       x: type === 'Source' ? 50 : 150,
       y: 100,
       type: type,
+      label: label, 
       color: type === 'Source' ? '#dc2626' : '#10b981', // Red for Source, Green for Bed
     };
     setItems([...items, newItem]);
@@ -66,7 +89,17 @@ export default function FloorPlanDesigner() {
     }
   };
 
-  // 4. Update Item Position on Drag
+  // 4. Handle Double Click (Delete Item)
+  const handleItemDblClick = (id: number) => {
+    // Remove the item
+    const newItems = items.filter(i => i.id !== id);
+    setItems(newItems);
+    
+    // Also remove any pipes connected to this item
+    setConnections(connections.filter(c => c.start !== id && c.end !== id));
+  };
+
+  // 5. Update Item Position on Drag
   const handleDragEnd = (e: any, id: number) => {
     const newItems = items.map((item) => {
       if (item.id === id) {
@@ -77,7 +110,7 @@ export default function FloorPlanDesigner() {
     setItems(newItems);
   };
 
-  // 5. Helper: Calculate Distance between two items
+  // 6. Helper: Calculate Distance between two items
   const getDistance = (startId: number, endId: number) => {
     const start = items.find((i) => i.id === startId);
     const end = items.find((i) => i.id === endId);
@@ -89,7 +122,7 @@ export default function FloorPlanDesigner() {
     const pixelDistance = Math.sqrt(dx * dx + dy * dy);
 
     // Convert to meters
-    return (pixelDistance / pixelsPerMeter).toFixed(2); // Returns string "1.50"
+    return (pixelDistance / pixelsPerMeter).toFixed(2); 
   };
 
   return (
@@ -127,8 +160,10 @@ export default function FloorPlanDesigner() {
         <button onClick={() => addItem('Source')} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-red-700 text-sm">
             + Add Source
         </button>
+        
+        {/* Dynamic Label for Bed Button */}
         <button onClick={() => addItem('Bed')} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-emerald-700 text-sm">
-            + Add Bed
+            + Add {currentRoomType ? currentRoomType.split('_')[0].toUpperCase() : 'Bed'}
         </button>
         
         {/* Draw Mode Toggle */}
@@ -149,6 +184,7 @@ export default function FloorPlanDesigner() {
                 <p className="text-lg">1. Upload Plan</p>
                 <p className="text-lg">2. Add Source & Beds</p>
                 <p className="text-lg">3. Enable "Draw Pipe" and connect them</p>
+                <p className="text-sm mt-4">(Double-click any item to delete it)</p>
             </div>
         )}
         
@@ -202,6 +238,7 @@ export default function FloorPlanDesigner() {
                 y={item.y}
                 onDragEnd={(e) => handleDragEnd(e, item.id)}
                 onClick={() => handleItemClick(item.id)}
+                onDblClick={() => handleItemDblClick(item.id)} // Double click to delete
               >
                 {/* Highlight ring if selected for drawing */}
                 {selectedStartId === item.id && (
@@ -219,7 +256,7 @@ export default function FloorPlanDesigner() {
                 <Text 
                     y={16} 
                     x={-15}
-                    text={item.type} 
+                    text={item.label || item.type} 
                     fontSize={10} 
                     fill="black" 
                     fontStyle="bold" 

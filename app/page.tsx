@@ -169,9 +169,12 @@ export default function Home() {
           </div>
       )}
 
-      {/* --- VISUAL FLOOR PLAN DESIGNER (ADDED HERE) --- */}
+      {/* --- VISUAL FLOOR PLAN DESIGNER (CONNECTED!) --- */}
       <div className="w-full max-w-6xl mt-12 mb-20">
-        <FloorPlanDesigner />
+        <FloorPlanDesigner 
+            currentRoomType={roomType}
+            onBedCountChange={(n: number) => setBeds(n.toString())}
+        />
       </div>
 
     </div>
