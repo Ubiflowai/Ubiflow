@@ -2,10 +2,9 @@
 
 import React, { useState } from 'react';
 import { calculateGasLoad } from './gasLogic'; 
-import FloorPlanDesigner from './Components/FloorPlanDesigner'; // Make sure this path matches where you created the component
 
 export default function Home() {
-  const [roomType, setRoomType] = useState('ward_single_4bed');
+  const [roomType, setRoomType] = useState('icu_standard');
   const [beds, setBeds] = useState('');
 
   const data = calculateGasLoad(roomType, beds);
@@ -87,25 +86,11 @@ export default function Home() {
                         onChange={(e) => setRoomType(e.target.value)}
                         className="w-full p-4 pr-10 rounded-xl border-2 border-slate-200 bg-slate-50 text-slate-900 text-lg font-bold shadow-sm focus:border-blue-500 focus:ring-4 focus:ring-blue-500/20 outline-none appearance-none cursor-pointer transition-all"
                     >
-                        <optgroup label="In-Patient">
-                            <option value="ward_single_4bed">General Ward (Single/4-Bed)</option>
-                            <option value="ward_department">Whole Ward Department</option>
-                            <option value="maternity_ldrp">Maternity (LDRP)</option>
-                            <option value="neonatal">Neonatal (SCBU)</option>
-                            <option value="critical_care">Critical Care (ICU/CCU/HDU)</option>
-                            <option value="renal">Renal Dialysis</option>
-                        </optgroup>
-                        <optgroup label="Operating & Procedures">
-                            <option value="operating_rooms">Operating Rooms (Theatres)</option>
-                            <option value="recovery">Post-Anaesthesia Recovery</option>
-                            <option value="maternity_operating">Maternity Operating Suite</option>
-                            <option value="radiology">Radiology / Anaesthetic Rooms</option>
-                        </optgroup>
-                        <optgroup label="Emergency">
-                            <option value="ae_resus">A&E Resuscitation</option>
-                            <option value="ae_major_treatment">A&E Major Treatment</option>
-                            <option value="ae_treatment_cubicle">A&E Cubicle</option>
-                        </optgroup>
+                        <option value="ward">General Ward (In-patient)</option>
+                        <option value="icu">Critical Care / ICU</option>
+                        <option value="theatre">Operating Theatre Suite</option>
+                        <option value="recovery">Post-Anaesthesia Recovery</option>
+                        <option value="resus">A&E Resuscitation</option>
                     </select>
                     {/* Custom Arrow Icon */}
                     <div className="absolute inset-y-0 right-0 flex items-center px-4 pointer-events-none text-slate-500">
@@ -117,7 +102,7 @@ export default function Home() {
             {/* BED COUNT INPUT */}
             <div>
                 <label className="block text-slate-500 font-bold mb-3 uppercase text-xs tracking-widest">
-                    {roomType.includes('operating') || roomType === 'maternity_operating' ? 'Number of Suites (nS)' : 'Number of Beds/Spaces (n)'}
+                    {roomType === 'theatre' ? 'Number of Suites' : 'Number of Beds / Spaces'}
                 </label>
                 <input
                     type="number"
@@ -133,7 +118,7 @@ export default function Home() {
 
       {/* RESULTS GRID */}
       {beds && parseInt(beds) > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 w-full max-w-7xl mb-20">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 w-full max-w-7xl">
             <GasCard 
                 label="Oxygen (O₂)" 
                 colorTheme="blue" 
@@ -156,25 +141,12 @@ export default function Home() {
             />
           </div>
       ) : (
-          <div className="text-center py-12 px-6 rounded-3xl border-2 border-dashed border-slate-300 w-full max-w-4xl mb-20">
+          <div className="text-center py-12 px-6 rounded-3xl border-2 border-dashed border-slate-300 w-full max-w-4xl">
               <p className="text-slate-400 font-medium text-lg">
                   Please enter the number of beds or suites above to calculate HTM 02-01 loads.
               </p>
           </div>
       )}
-
-      {/* --- VISUAL FLOOR PLAN DESIGNER --- */}
-      <div className="w-full max-w-6xl pt-10 border-t border-slate-200">
-        <h2 className="text-3xl font-black text-slate-800 mb-6 text-center">
-            Floor Plan Visualizer
-        </h2>
-        <p className="text-center text-slate-500 mb-8 max-w-2xl mx-auto">
-            Upload your architectural drawing below to drag-and-drop bed positions and visualize the layout.
-        </p>
-        
-        {/* The Designer Component */}
-        <FloorPlanDesigner />
-      </div>
 
     </div>
   );
