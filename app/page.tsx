@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { calculateGasLoad } from './gasLogic'; 
+import FloorPlanDesigner from './Components/FloorPlanDesigner'; // Make sure this path matches where you created the component
 
 export default function Home() {
   const [roomType, setRoomType] = useState('ward_single_4bed');
@@ -132,7 +133,7 @@ export default function Home() {
 
       {/* RESULTS GRID */}
       {beds && parseInt(beds) > 0 ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 w-full max-w-7xl">
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6 w-full max-w-7xl mb-20">
             <GasCard 
                 label="Oxygen (O₂)" 
                 colorTheme="blue" 
@@ -155,12 +156,25 @@ export default function Home() {
             />
           </div>
       ) : (
-          <div className="text-center py-12 px-6 rounded-3xl border-2 border-dashed border-slate-300 w-full max-w-4xl">
+          <div className="text-center py-12 px-6 rounded-3xl border-2 border-dashed border-slate-300 w-full max-w-4xl mb-20">
               <p className="text-slate-400 font-medium text-lg">
                   Please enter the number of beds or suites above to calculate HTM 02-01 loads.
               </p>
           </div>
       )}
+
+      {/* --- VISUAL FLOOR PLAN DESIGNER --- */}
+      <div className="w-full max-w-6xl pt-10 border-t border-slate-200">
+        <h2 className="text-3xl font-black text-slate-800 mb-6 text-center">
+            Floor Plan Visualizer
+        </h2>
+        <p className="text-center text-slate-500 mb-8 max-w-2xl mx-auto">
+            Upload your architectural drawing below to drag-and-drop bed positions and visualize the layout.
+        </p>
+        
+        {/* The Designer Component */}
+        <FloorPlanDesigner />
+      </div>
 
     </div>
   );
