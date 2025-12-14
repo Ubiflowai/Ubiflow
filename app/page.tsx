@@ -2,7 +2,13 @@
 
 import React, { useState } from 'react';
 import { calculateGasLoad } from './gasLogic'; 
-import FloorPlanDesigner from './Components/FloorPlanDesigner';
+import dynamic from 'next/dynamic';
+
+// Lazy load the designer so it doesn't crash the server
+const FloorPlanDesigner = dynamic(() => import('./Components/FloorPlanDesigner'), {
+  ssr: false,
+  loading: () => <div className="h-[600px] w-full bg-slate-100 animate-pulse rounded-xl"></div>
+});
 
 export default function Home() {
   const [roomType, setRoomType] = useState('ward_single_4bed');
