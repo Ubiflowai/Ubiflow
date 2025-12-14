@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import { calculateGasLoad } from './gasLogic'; 
+import FloorPlanDesigner from './Components/FloorPlanDesigner';
 
 export default function Home() {
   const [roomType, setRoomType] = useState('ward_single_4bed');
