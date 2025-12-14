@@ -1,9 +1,10 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Stage, Layer, Image as KonvaImage, Circle, Text } from 'react-konva';
+import { Stage, Layer, Image as KonvaImage, Circle, Line, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 
+// --- HELPER: Load Image ---
 const URLImage = ({ src, scale }: { src: string, scale: number }) => {
   const [image] = useImage(src);
   return <KonvaImage image={image} scaleX={scale} scaleY={scale} />;
@@ -11,8 +12,19 @@ const URLImage = ({ src, scale }: { src: string, scale: number }) => {
 
 export default function FloorPlanDesigner() {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
+  
+  // State for Scale (Calibration)
+  const [pixelsPerMeter, setPixelsPerMeter] = useState(50); // Default: 50px = 1m
+  
+  // State for Items (Beds/Sources) and Connections (Pipes)
   const [items, setItems] = useState<any[]>([]);
+  const [connections, setConnections] = useState<any[]>([]);
+  
+  // Drawing Mode State
+  const [drawMode, setDrawMode] = useState(false);
+  const [selectedStartId, setSelectedStartId] = useState<number | null>(null);
 
+  // 1. Handle Upload
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -21,10 +33,40 @@ export default function FloorPlanDesigner() {
     }
   };
 
-  const addBed = () => {
-    setItems([...items, { id: Date.now(), x: 100, y: 100 }]);
+  // 2. Add Items
+  const addItem = (type: 'Bed' | 'Source') => {
+    const newItem = {
+      id: Date.now(),
+      x: type === 'Source' ? 50 : 150,
+      y: 100,
+      type: type,
+      color: type === 'Source' ? '#dc2626' : '#10b981', // Red for Source, Green for Bed
+    };
+    setItems([...items, newItem]);
   };
 
+  // 3. Handle Item Click (For connecting pipes)
+  const handleItemClick = (id: number) => {
+    if (!drawMode) return;
+
+    if (selectedStartId === null) {
+      // Step A: Select the starting point
+      setSelectedStartId(id);
+    } else {
+      // Step B: Select the ending point & Create Line
+      if (selectedStartId !== id) {
+        const newConnection = {
+          id: Date.now(),
+          start: selectedStartId,
+          end: id,
+        };
+        setConnections([...connections, newConnection]);
+        setSelectedStartId(null); // Reset selection
+      }
+    }
+  };
+
+  // 4. Update Item Position on Drag
   const handleDragEnd = (e: any, id: number) => {
     const newItems = items.map((item) => {
       if (item.id === id) {
@@ -35,60 +77,154 @@ export default function FloorPlanDesigner() {
     setItems(newItems);
   };
 
+  // 5. Helper: Calculate Distance between two items
+  const getDistance = (startId: number, endId: number) => {
+    const start = items.find((i) => i.id === startId);
+    const end = items.find((i) => i.id === endId);
+    if (!start || !end) return 0;
+
+    // Pythagorean Theorem: a^2 + b^2 = c^2
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+    // Convert to meters
+    return (pixelDistance / pixelsPerMeter).toFixed(2); // Returns string "1.50"
+  };
+
   return (
     <div className="w-full p-6 bg-white rounded-xl border-2 border-slate-200 mt-8">
-      <h2 className="text-2xl font-black text-slate-900 mb-4">Floor Plan Visualizer</h2>
+      <div className="flex justify-between items-center mb-6">
+        <h2 className="text-2xl font-black text-slate-900">Interactive Pipe Sizer</h2>
+        
+        {/* CALIBRATION INPUT */}
+        <div className="flex items-center gap-2 bg-slate-100 p-2 rounded-lg">
+            <span className="text-xs font-bold text-slate-500">SCALE:</span>
+            <input 
+                type="number" 
+                value={pixelsPerMeter} 
+                onChange={(e) => setPixelsPerMeter(Number(e.target.value))}
+                className="w-16 p-1 text-sm font-bold border rounded"
+            />
+            <span className="text-xs text-slate-400">px = 1m</span>
+        </div>
+      </div>
       
-      {/* CONTROLS */}
-      <div className="flex gap-4 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200">
-        <div className="flex flex-col">
-            <label className="text-xs font-bold text-slate-500 uppercase mb-1">Step 1: Upload Plan</label>
+      {/* TOOLBAR */}
+      <div className="flex flex-wrap gap-4 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200 items-center">
+        
+        {/* Upload */}
+        <div className="mr-auto">
             <input 
                 type="file" 
                 onChange={handleUpload} 
                 accept="image/*"
-                className="block w-full text-sm text-slate-500
-                file:mr-4 file:py-2 file:px-4
-                file:rounded-full file:border-0
-                file:text-sm file:font-semibold
-                file:bg-blue-50 file:text-blue-700
-                hover:file:bg-blue-100"
+                className="text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 font-semibold"
             />
         </div>
+
+        {/* Tools */}
+        <button onClick={() => addItem('Source')} className="bg-red-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-red-700 text-sm">
+            + Add Source
+        </button>
+        <button onClick={() => addItem('Bed')} className="bg-emerald-600 text-white px-4 py-2 rounded-lg font-bold shadow hover:bg-emerald-700 text-sm">
+            + Add Bed
+        </button>
         
-        <div className="flex flex-col justify-end">
-             <button 
-              onClick={addBed}
-              className="bg-emerald-600 text-white px-6 py-2 rounded-lg font-bold hover:bg-emerald-700 shadow-md transition-all active:scale-95"
-            >
-              + Add Bed Icon
-            </button>
-        </div>
+        {/* Draw Mode Toggle */}
+        <button 
+            onClick={() => { setDrawMode(!drawMode); setSelectedStartId(null); }} 
+            className={`px-6 py-2 rounded-lg font-bold shadow text-sm border-2 ${
+                drawMode ? 'bg-blue-100 border-blue-500 text-blue-800' : 'bg-white border-slate-300 text-slate-600'
+            }`}
+        >
+            {drawMode ? 'Click items to Connect' : 'Draw Pipe (Off)'}
+        </button>
       </div>
 
-      {/* CANVAS AREA */}
-      <div className="relative w-full h-[500px] bg-slate-100 rounded-xl overflow-hidden border-2 border-dashed border-slate-300">
+      {/* CANVAS */}
+      <div className="relative w-full h-[600px] bg-slate-100 rounded-xl overflow-hidden border-2 border-dashed border-slate-300 shadow-inner">
         {!imageSrc && (
-            <div className="absolute inset-0 flex items-center justify-center text-slate-400 font-bold pointer-events-none">
-                <p>Upload a floor plan image above to start</p>
+            <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 font-bold pointer-events-none opacity-50">
+                <p className="text-lg">1. Upload Plan</p>
+                <p className="text-lg">2. Add Source & Beds</p>
+                <p className="text-lg">3. Enable "Draw Pipe" and connect them</p>
             </div>
         )}
         
-        <Stage width={800} height={500}>
+        <Stage width={800} height={600}>
           <Layer>
             {imageSrc && <URLImage src={imageSrc} scale={0.5} />}
+
+            {/* DRAW PIPES (LINES) */}
+            {connections.map((conn) => {
+                const start = items.find(i => i.id === conn.start);
+                const end = items.find(i => i.id === conn.end);
+                
+                if (!start || !end) return null;
+
+                const midX = (start.x + end.x) / 2;
+                const midY = (start.y + end.y) / 2;
+                const meters = getDistance(conn.start, conn.end);
+
+                return (
+                    <Group key={conn.id}>
+                        {/* The Pipe Line */}
+                        <Line
+                            points={[start.x, start.y, end.x, end.y]}
+                            stroke="#3b82f6" // Blue Pipe
+                            strokeWidth={4}
+                            lineCap="round"
+                            lineJoin="round"
+                        />
+                        {/* Distance Label */}
+                        <Text 
+                            x={midX} 
+                            y={midY - 10} 
+                            text={`${meters}m`} 
+                            fontSize={14} 
+                            fontStyle="bold"
+                            fill="#1e3a8a"
+                            align="center"
+                            shadowColor="white"
+                            shadowBlur={2}
+                        />
+                    </Group>
+                );
+            })}
+
+            {/* DRAW ITEMS (DOTS) */}
             {items.map((item) => (
-              <React.Fragment key={item.id}>
+              <Group 
+                key={item.id} 
+                draggable 
+                x={item.x} 
+                y={item.y}
+                onDragEnd={(e) => handleDragEnd(e, item.id)}
+                onClick={() => handleItemClick(item.id)}
+              >
+                {/* Highlight ring if selected for drawing */}
+                {selectedStartId === item.id && (
+                    <Circle radius={20} stroke="#3b82f6" strokeWidth={3} dash={[4, 4]} />
+                )}
+                
+                {/* The Item Dot */}
                 <Circle
-                  x={item.x}
-                  y={item.y}
-                  radius={15}
-                  fill="#10b981"
-                  draggable
-                  onDragEnd={(e) => handleDragEnd(e, item.id)}
+                  radius={12}
+                  fill={item.color}
+                  shadowColor="black"
+                  shadowBlur={4}
+                  shadowOpacity={0.3}
                 />
-                <Text x={item.x - 20} y={item.y + 20} text="BED" fontSize={14} fill="black" fontStyle="bold" />
-              </React.Fragment>
+                <Text 
+                    y={16} 
+                    x={-15}
+                    text={item.type} 
+                    fontSize={10} 
+                    fill="black" 
+                    fontStyle="bold" 
+                />
+              </Group>
             ))}
           </Layer>
         </Stage>
