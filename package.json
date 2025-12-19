@@ -13,6 +13,7 @@
     "dxf-parser": "^1.1.2",
     "konva": "^10.0.12",
     "next": "16.0.10",
+    "pdfjs-dist": "^5.4.449",
     "react": "19.2.1",
     "react-dom": "19.2.1",
     "react-konva": "^19.2.1",

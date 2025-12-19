@@ -4,6 +4,10 @@ import React, { useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Circle, Line, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 import DxfParser from 'dxf-parser';
+import * as pdfjsLib from 'pdfjs-dist';
+
+// IMPORTANT: Configure PDF Worker from CDN to avoid Next.js build errors
+pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
 // --- HELPER: Load Image ---
 const URLImage = ({ src, scale }: { src: string, scale: number }) => {
@@ -30,18 +34,32 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
   const [drawMode, setDrawMode] = useState(false);
   const [selectedStartId, setSelectedStartId] = useState<number | null>(null);
 
-  // --- REMOVED THE USEEFFECT CAUSING THE BUG ---
-
-  // --- 1. HANDLE UPLOAD ---
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // --- 1. HANDLE UPLOAD (Image, DXF, or PDF) ---
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.type.includes('image')) {
+    // A. Handle PDF
+    if (file.type === 'application/pdf') {
+        const reader = new FileReader();
+        reader.onload = async (event) => {
+            const typedarray = new Uint8Array(event.target?.result as ArrayBuffer);
+            try {
+                await processPdf(typedarray);
+            } catch (err) {
+                console.error(err);
+                alert("Error reading PDF. Please ensure it is a valid file.");
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+    // B. Handle Standard Images
+    else if (file.type.includes('image')) {
         const url = URL.createObjectURL(file);
         setImageSrc(url);
         setDxfLines([]); 
     } 
+    // C. Handle AutoCAD DXF
     else if (file.name.endsWith('.dxf')) {
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -58,7 +76,35 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
     }
   };
 
-  // --- 2. PROCESS DXF ---
+// --- 2. PROCESS PDF (Convert to Image) ---
+  const processPdf = async (data: Uint8Array) => {
+      // Load the PDF
+      const pdf = await pdfjsLib.getDocument(data).promise;
+      // Get the first page
+      const page = await pdf.getPage(1);
+      
+      // Determine scale (high quality)
+      const viewport = page.getViewport({ scale: 2.0 });
+      
+      // Create a hidden canvas to render the PDF
+      const canvas = document.createElement('canvas');
+      const context = canvas.getContext('2d');
+      if (!context) return;
+      
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      // Render PDF page into the hidden canvas
+      // FIX: We cast 'renderContext' to 'any' to solve the TypeScript error
+      const renderContext = { canvasContext: context, viewport: viewport };
+      await page.render(renderContext as any).promise;
+
+      // Convert hidden canvas to an Image URL that Konva can read
+      const imgUrl = canvas.toDataURL();
+      setImageSrc(imgUrl);
+      setDxfLines([]); // Clear any DXF lines
+  };
+  // --- 3. PROCESS DXF ---
   const processDxf = (dxf: any) => {
       if (!dxf || !dxf.entities) return;
       const lines: any[] = [];
@@ -90,7 +136,7 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
       setImageSrc(null); 
   };
 
-  // --- 3. ADD ITEM (FIXED) ---
+  // --- 4. ADD ITEM (FIXED) ---
   const addItem = (type: 'Bed' | 'Source') => {
     let label: string = type;
     if (type === 'Bed') {
@@ -110,7 +156,6 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
     const newItems = [...items, newItem];
     setItems(newItems);
 
-    // FIX: Only update the parent if we added a BED (not a source)
     if (type === 'Bed') {
         const count = newItems.filter(i => i.type !== 'Source').length;
         onBedCountChange(count);
@@ -129,14 +174,13 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
     }
   };
 
-  // --- 4. DELETE ITEM (FIXED) ---
+  // --- 5. DELETE ITEM ---
   const handleItemDblClick = (id: number) => {
     const itemToDelete = items.find(i => i.id === id);
     const newItems = items.filter(i => i.id !== id);
     setItems(newItems);
     setConnections(connections.filter(c => c.start !== id && c.end !== id));
 
-    // FIX: Update parent count if we deleted a BED
     if (itemToDelete && itemToDelete.type !== 'Source') {
         const count = newItems.filter(i => i.type !== 'Source').length;
         onBedCountChange(count);
@@ -147,7 +191,7 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
     setItems(items.map(i => i.id === id ? { ...i, x: e.target.x(), y: e.target.y() } : i));
   };
 
-  // --- 5. MANHATTAN DISTANCE ---
+  // --- 6. MANHATTAN DISTANCE ---
   const getManhattanDistance = (startId: number, endId: number) => {
     const start = items.find((i) => i.id === startId);
     const end = items.find((i) => i.id === endId);
@@ -169,11 +213,12 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
       
       <div className="flex flex-wrap gap-4 mb-6 p-4 bg-slate-50 rounded-lg border border-slate-200 items-center">
         <div className="mr-auto flex flex-col">
-            <label className="text-xs font-bold text-slate-500 mb-1">Upload Plan (.DXF or Image)</label>
+            <label className="text-xs font-bold text-slate-500 mb-1">Upload Plan (DXF, PDF, Image)</label>
+            {/* UPDATED ACCEPT ATTRIBUTE */}
             <input 
                 type="file" 
                 onChange={handleUpload} 
-                accept=".dxf,image/*" 
+                accept=".dxf,.pdf,image/*" 
                 className="text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 font-semibold"
             />
         </div>
@@ -190,14 +235,15 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
       <div className="relative w-full h-[600px] bg-slate-100 rounded-xl overflow-hidden border-2 border-dashed border-slate-300 shadow-inner">
         {!imageSrc && dxfLines.length === 0 && (
             <div className="absolute inset-0 flex flex-col items-center justify-center text-slate-400 font-bold pointer-events-none opacity-50">
-                <p className="text-lg">1. Upload DXF or Image</p>
+                <p className="text-lg">1. Upload DXF, PDF, or Image</p>
                 <p className="text-lg">2. Add Source & Beds</p>
-                <p className="text-sm mt-4 text-blue-500">Supported: .DXF (AutoCAD), .PNG, .JPG</p>
+                <p className="text-sm mt-4 text-blue-500">Supported: .DXF, .PDF, .PNG, .JPG</p>
             </div>
         )}
         
         <Stage width={800} height={600} draggable>
           <Layer>
+            {/* THIS IS WHERE THE CONVERTED PDF OR IMAGE SHOWS */}
             {imageSrc && <URLImage src={imageSrc} scale={0.5} />}
 
             {/* DXF LINES */}
