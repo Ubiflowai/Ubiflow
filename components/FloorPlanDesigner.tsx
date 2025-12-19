@@ -7,14 +7,11 @@ import DxfParser from 'dxf-parser';
 import * as pdfjsLib from 'pdfjs-dist';
 
 // --- CONFIG & ASSETS ---
-// 1. Worker Config MUST happen after import
 pdfjsLib.GlobalWorkerOptions.workerSrc = `//cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.js`;
 
-// Placeholder Icons
 const BED_ICON_URL = 'https://cdn-icons-png.flaticon.com/512/3054/3054889.png';
 const SOURCE_ICON_URL = 'https://cdn-icons-png.flaticon.com/512/4492/4492453.png';
 
-// Helper to load images for items
 const ItemImage = ({ src, width, height }: { src: string, width: number, height: number }) => {
     const [image] = useImage(src, 'anonymous');
     return <KonvaImage image={image} width={width} height={height} offsetX={width/2} offsetY={height/2} />;
@@ -30,14 +27,13 @@ interface DesignerProps {
   onBedCountChange: (n: number) => void;
 }
 
-// Types for drawn objects
 type Drawable = 
     | { id: number, type: 'LINE', points: number[], stroke: string }
     | { id: number, type: 'RECT', x: number, y: number, width: number, height: number, stroke: string }
     | { id: number, type: 'TEXT', x: number, y: number, text: string, fill: string };
 
 export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }: DesignerProps) {
-  // --- STATE DEFINITIONS MUST BE INSIDE THE COMPONENT ---
+  // --- STATE ---
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   const stageRef = useRef<any>(null);
   
@@ -45,75 +41,117 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
   const [editMode, setEditMode] = useState<'PIPE' | 'CAD'>('PIPE');
   const [cadTool, setCadTool] = useState<'NONE' | 'LINE' | 'RECT' | 'TEXT'>('NONE');
 
-  // Data
-  const [dxfEntities, setDxfEntities] = useState<any[]>([]); // Imported DXF lines
-  const [drawables, setDrawables] = useState<Drawable[]>([]); // User-drawn CAD
-  const [items, setItems] = useState<any[]>([]); // Smart Items (Beds/Source)
-  const [connections, setConnections] = useState<any[]>([]); // Pipes
-
-  // Selections & Editing
-  const [selectedIds, setSelectedIds] = useState<number[]>([]); // For CAD items
-  const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null); // For Pipes
-  
-  // Drawing Temp State
-  const [tempDrawable, setTempDrawable] = useState<Drawable | null>(null);
-  const isDrawing = useRef(false);
-
-  // Pipe Drawing State
-  const [drawPipeMode, setDrawPipeMode] = useState(false);
-  const [selectedStartId, setSelectedStartId] = useState<number | null>(null);
+  // Data State (Things we need to save)
+  const [dxfEntities, setDxfEntities] = useState<any[]>([]); 
+  const [drawables, setDrawables] = useState<Drawable[]>([]); 
+  const [items, setItems] = useState<any[]>([]); 
+  const [connections, setConnections] = useState<any[]>([]); 
   const [pixelsPerMeter, setPixelsPerMeter] = useState(50);
   const [dxfScale, setDxfScale] = useState(1);
 
+  // Interaction State (Temporary, don't need to save)
+  const [selectedIds, setSelectedIds] = useState<number[]>([]); 
+  const [selectedConnectionId, setSelectedConnectionId] = useState<number | null>(null); 
+  const [tempDrawable, setTempDrawable] = useState<Drawable | null>(null);
+  const isDrawing = useRef(false);
+  const [drawPipeMode, setDrawPipeMode] = useState(false);
+  const [selectedStartId, setSelectedStartId] = useState<number | null>(null);
 
-  // --- 1. UPLOAD HANDLERS ---
+
+  // --- 1. SAVE & LOAD LOGIC (NEW) ---
+  
+  const saveProject = () => {
+      const projectData = {
+          version: 1,
+          date: new Date().toISOString(),
+          imageSrc,
+          dxfEntities,
+          drawables,
+          items,
+          connections,
+          pixelsPerMeter,
+          dxfScale
+      };
+
+      const blob = new Blob([JSON.stringify(projectData)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `ubiflow_project_${Date.now()}.ubiflow`; 
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+  };
+
+  const loadProject = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          try {
+              const data = JSON.parse(event.target?.result as string);
+              
+              // Validate minimal structure
+              if (!data.version) throw new Error("Invalid UbiFlow file");
+
+              // Restore State
+              if (data.imageSrc) setImageSrc(data.imageSrc);
+              if (data.dxfEntities) setDxfEntities(data.dxfEntities);
+              if (data.drawables) setDrawables(data.drawables);
+              if (data.items) {
+                  setItems(data.items);
+                  // Update parent bed count
+                  onBedCountChange(data.items.filter((i: any) => i.type !== 'Source').length);
+              }
+              if (data.connections) setConnections(data.connections);
+              if (data.pixelsPerMeter) setPixelsPerMeter(data.pixelsPerMeter);
+              if (data.dxfScale) setDxfScale(data.dxfScale);
+
+              alert("Project loaded successfully!");
+
+          } catch (err) {
+              console.error(err);
+              alert("Error loading project file.");
+          }
+      };
+      reader.readAsText(file);
+  };
+
+
+  // --- 2. UPLOAD HANDLERS ---
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
+    // Check if it's our custom project file
+    if (file.name.endsWith('.ubiflow') || file.type === 'application/json') {
+        loadProject(e);
+        return;
+    }
+
     if (file.type === 'application/pdf') {
         const reader = new FileReader();
-        reader.onload = async (evt) => { 
-            try { 
-                await processPdf(new Uint8Array(evt.target?.result as ArrayBuffer)); 
-            } catch (e) { 
-                console.error(e);
-                alert("PDF Error: See console for details"); 
-            } 
-        };
+        reader.onload = async (evt) => { try { await processPdf(new Uint8Array(evt.target?.result as ArrayBuffer)); } catch (e) { alert("PDF Error"); } };
         reader.readAsArrayBuffer(file);
     } else if (file.type.includes('image')) {
-        setImageSrc(URL.createObjectURL(file)); 
-        setDxfEntities([]);
+        setImageSrc(URL.createObjectURL(file)); setDxfEntities([]);
     } else if (file.name.endsWith('.dxf')) {
         const reader = new FileReader();
-        reader.onload = (evt) => { 
-            try { 
-                processDxf(new DxfParser().parseSync(evt.target?.result as string)); 
-            } catch (e) { 
-                alert("DXF Error"); 
-            } 
-        };
+        reader.onload = (evt) => { try { processDxf(new DxfParser().parseSync(evt.target?.result as string)); } catch (e) { alert("DXF Error"); } };
         reader.readAsText(file);
     }
   };
 
-  // --- PROCESS PDF (MUST BE INSIDE COMPONENT TO ACCESS STATE) ---
   const processPdf = async (data: Uint8Array) => {
       const pdf = await pdfjsLib.getDocument(data).promise;
       const page = await pdf.getPage(1);
       const viewport = page.getViewport({ scale: 2.0 });
       const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d'); 
-      if (!ctx) return;
-      
-      canvas.width = viewport.width; 
-      canvas.height = viewport.height;
-      
-      const renderContext = { canvasContext: ctx, viewport };
-      await page.render(renderContext as any).promise;
-      
-      setImageSrc(canvas.toDataURL()); 
-      setDxfEntities([]);
+      const ctx = canvas.getContext('2d'); if (!ctx) return;
+      canvas.width = viewport.width; canvas.height = viewport.height;
+      await page.render({ canvasContext: ctx, viewport } as any).promise;
+      setImageSrc(canvas.toDataURL()); setDxfEntities([]);
   };
 
   const processDxf = (dxf: any) => {
@@ -131,7 +169,7 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
       setDxfEntities(newEntities); setImageSrc(null);
   };
 
-  // --- 2. ITEM HANDLERS ---
+  // --- 3. ITEM HANDLERS ---
   const addItem = (type: 'Bed' | 'Source') => {
     let label = type === 'Bed' ? (currentRoomType ? currentRoomType.split('_')[0].toUpperCase() : 'BED') : type;
     const iconUrl = type === 'Bed' ? BED_ICON_URL : SOURCE_ICON_URL;
@@ -152,53 +190,39 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
       }
   };
 
-  // --- 3. DRAWING HANDLERS ---
+  // --- 4. DRAWING HANDLERS ---
   const handleStageMouseDown = (e: any) => {
       if (e.target === e.target.getStage()) {
           setSelectedConnectionId(null);
           if(cadTool === 'NONE') setSelectedIds([]);
       }
-
       if (editMode !== 'CAD' || cadTool === 'NONE') return;
-
       isDrawing.current = true;
       const pos = e.target.getStage().getPointerPosition();
       const id = Date.now();
 
-      if (cadTool === 'LINE') {
-          setTempDrawable({ id, type: 'LINE', points: [pos.x, pos.y, pos.x, pos.y], stroke: 'black' });
-      } else if (cadTool === 'RECT') {
-          setTempDrawable({ id, type: 'RECT', x: pos.x, y: pos.y, width: 0, height: 0, stroke: 'black' });
-      } else if (cadTool === 'TEXT') {
+      if (cadTool === 'LINE') setTempDrawable({ id, type: 'LINE', points: [pos.x, pos.y, pos.x, pos.y], stroke: 'black' });
+      else if (cadTool === 'RECT') setTempDrawable({ id, type: 'RECT', x: pos.x, y: pos.y, width: 0, height: 0, stroke: 'black' });
+      else if (cadTool === 'TEXT') {
           const text = prompt("Enter text:");
-          if (text) {
-              setDrawables([...drawables, { id, type: 'TEXT', x: pos.x, y: pos.y, text, fill: 'black' }]);
-          }
-          setCadTool('NONE'); 
-          isDrawing.current = false;
+          if (text) setDrawables([...drawables, { id, type: 'TEXT', x: pos.x, y: pos.y, text, fill: 'black' }]);
+          setCadTool('NONE'); isDrawing.current = false;
       }
   };
 
   const handleStageMouseMove = (e: any) => {
       if (!isDrawing.current || !tempDrawable) return;
       const pos = e.target.getStage().getPointerPosition();
-
-      if (tempDrawable.type === 'LINE') {
-          setTempDrawable({ ...tempDrawable, points: [tempDrawable.points[0], tempDrawable.points[1], pos.x, pos.y] });
-      } else if (tempDrawable.type === 'RECT') {
-          setTempDrawable({ ...tempDrawable, width: pos.x - tempDrawable.x, height: pos.y - tempDrawable.y });
-      }
+      if (tempDrawable.type === 'LINE') setTempDrawable({ ...tempDrawable, points: [tempDrawable.points[0], tempDrawable.points[1], pos.x, pos.y] });
+      else if (tempDrawable.type === 'RECT') setTempDrawable({ ...tempDrawable, width: pos.x - tempDrawable.x, height: pos.y - tempDrawable.y });
   };
 
   const handleStageMouseUp = () => {
       isDrawing.current = false;
-      if (tempDrawable) {
-          setDrawables([...drawables, tempDrawable]);
-          setTempDrawable(null);
-      }
+      if (tempDrawable) { setDrawables([...drawables, tempDrawable]); setTempDrawable(null); }
   };
 
-  // --- 4. EDITING HANDLERS ---
+  // --- 5. EDITING HANDLERS ---
   const handleSelect = (id: number) => {
       if (editMode !== 'CAD' || cadTool !== 'NONE') return;
       if (selectedIds.includes(id)) setSelectedIds(selectedIds.filter(sid => sid !== id));
@@ -224,6 +248,16 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
             <button onClick={() => {setEditMode('PIPE'); setCadTool('NONE')}} className={`px-4 py-2 text-sm font-bold rounded-md transition-colors ${editMode === 'PIPE' ? 'bg-white shadow text-blue-600' : 'text-slate-500 hover:text-slate-700'}`}>Pipe System Mode</button>
             <button onClick={() => {setEditMode('CAD'); setDrawPipeMode(false)}} className={`px-4 py-2 text-sm font-bold rounded-md transition-colors ${editMode === 'CAD' ? 'bg-white shadow text-orange-600' : 'text-slate-500 hover:text-slate-700'}`}>CAD Edit Mode</button>
         </div>
+        
+        {/* NEW SAVE/LOAD BUTTONS */}
+        <div className="flex gap-2">
+            <button onClick={saveProject} className="bg-slate-800 text-white px-3 py-2 rounded text-sm font-bold hover:bg-slate-900">💾 Save Project</button>
+            <div className="relative overflow-hidden">
+                <button className="bg-slate-200 text-slate-700 px-3 py-2 rounded text-sm font-bold hover:bg-slate-300">📂 Load Project</button>
+                <input type="file" onChange={handleUpload} accept=".ubiflow,.json" className="absolute inset-0 opacity-0 cursor-pointer"/>
+            </div>
+        </div>
+
         <div className="flex items-center gap-2">
             <span className="text-xs font-bold text-slate-500">SCALE: 1m =</span>
             <input type="number" value={pixelsPerMeter} onChange={(e) => setPixelsPerMeter(Number(e.target.value))} className="w-12 p-1 text-sm font-bold border rounded text-center"/>
@@ -234,8 +268,9 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
       {/* --- SECONDARY TOOLBAR --- */}
       <div className={`flex flex-wrap gap-3 mb-4 p-3 rounded-lg border items-center ${editMode === 'PIPE' ? 'bg-blue-50 border-blue-200' : 'bg-orange-50 border-orange-200'}`}>
         
+        {/* Universal Import Button */}
         <div className="mr-4 relative group">
-            <button className="px-3 py-2 bg-white border rounded text-sm font-bold text-slate-600 hover:bg-slate-50">📁 Import Plan</button>
+            <button className="px-3 py-2 bg-white border rounded text-sm font-bold text-slate-600 hover:bg-slate-50">📄 Import Background (DXF/PDF)</button>
             <input type="file" onChange={handleUpload} accept=".dxf,.pdf,image/*" className="absolute inset-0 opacity-0 cursor-pointer"/>
         </div>
 
