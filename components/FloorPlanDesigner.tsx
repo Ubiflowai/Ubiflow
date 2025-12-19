@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Stage, Layer, Image as KonvaImage, Circle, Line, Text, Group } from 'react-konva';
 import useImage from 'use-image';
 import DxfParser from 'dxf-parser';
@@ -19,7 +19,7 @@ interface DesignerProps {
 export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }: DesignerProps) {
   const [imageSrc, setImageSrc] = useState<string | null>(null);
   
-  // New State for AutoCAD DXF Files
+  // AutoCAD DXF State
   const [dxfLines, setDxfLines] = useState<any[]>([]); 
   const [dxfScale, setDxfScale] = useState(1);
   
@@ -30,23 +30,18 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
   const [drawMode, setDrawMode] = useState(false);
   const [selectedStartId, setSelectedStartId] = useState<number | null>(null);
 
-  useEffect(() => {
-    const bedCount = items.filter(i => i.type !== 'Source').length;
-    onBedCountChange(bedCount);
-  }, [items, onBedCountChange]);
+  // --- REMOVED THE USEEFFECT CAUSING THE BUG ---
 
-  // --- 1. HANDLE UPLOAD (Detects Image vs DXF) ---
+  // --- 1. HANDLE UPLOAD ---
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // A. Handle Standard Images
     if (file.type.includes('image')) {
         const url = URL.createObjectURL(file);
         setImageSrc(url);
-        setDxfLines([]); // Clear any DXF lines
+        setDxfLines([]); 
     } 
-    // B. Handle AutoCAD DXF Files
     else if (file.name.endsWith('.dxf')) {
         const reader = new FileReader();
         reader.onload = (event) => {
@@ -56,14 +51,14 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
                 const dxf = parser.parseSync(text);
                 processDxf(dxf);
             } catch (err) {
-                alert("Error parsing DXF. Make sure it is an ASCII DXF file.");
+                alert("Error parsing DXF.");
             }
         };
         reader.readAsText(file);
     }
   };
 
-  // --- 2. PROCESS DXF DATA ---
+  // --- 2. PROCESS DXF ---
   const processDxf = (dxf: any) => {
       if (!dxf || !dxf.entities) return;
       const lines: any[] = [];
@@ -74,13 +69,11 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
               lines.push({
                   points: [entity.vertices[0].x, -entity.vertices[0].y, entity.vertices[1].x, -entity.vertices[1].y]
               });
-              // Calculate bounds to auto-fit screen
               minX = Math.min(minX, entity.vertices[0].x, entity.vertices[1].x);
               maxX = Math.max(maxX, entity.vertices[0].x, entity.vertices[1].x);
               minY = Math.min(minY, -entity.vertices[0].y, -entity.vertices[1].y);
               maxY = Math.max(maxY, -entity.vertices[0].y, -entity.vertices[1].y);
           }
-          // Handle PolyLines (Connected lines)
           else if (entity.type === 'LWPOLYLINE') {
               for (let i = 0; i < entity.vertices.length - 1; i++) {
                   lines.push({
@@ -90,7 +83,6 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
           }
       });
 
-      // Auto-scale logic
       const width = maxX - minX;
       const scale = 600 / width; 
       setDxfScale(scale);
@@ -98,13 +90,31 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
       setImageSrc(null); 
   };
 
+  // --- 3. ADD ITEM (FIXED) ---
   const addItem = (type: 'Bed' | 'Source') => {
     let label: string = type;
     if (type === 'Bed') {
         const cleanName = currentRoomType ? currentRoomType.split('_')[0].toUpperCase() : 'BED'; 
         label = cleanName; 
     }
-    setItems([...items, { id: Date.now(), x: 100, y: 100, type, label, color: type === 'Source' ? '#dc2626' : '#10b981' }]);
+
+    const newItem = { 
+        id: Date.now(), 
+        x: 100, 
+        y: 100, 
+        type, 
+        label, 
+        color: type === 'Source' ? '#dc2626' : '#10b981' 
+    };
+
+    const newItems = [...items, newItem];
+    setItems(newItems);
+
+    // FIX: Only update the parent if we added a BED (not a source)
+    if (type === 'Bed') {
+        const count = newItems.filter(i => i.type !== 'Source').length;
+        onBedCountChange(count);
+    }
   };
 
   const handleItemClick = (id: number) => {
@@ -119,23 +129,29 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
     }
   };
 
+  // --- 4. DELETE ITEM (FIXED) ---
   const handleItemDblClick = (id: number) => {
-    setItems(items.filter(i => i.id !== id));
+    const itemToDelete = items.find(i => i.id === id);
+    const newItems = items.filter(i => i.id !== id);
+    setItems(newItems);
     setConnections(connections.filter(c => c.start !== id && c.end !== id));
+
+    // FIX: Update parent count if we deleted a BED
+    if (itemToDelete && itemToDelete.type !== 'Source') {
+        const count = newItems.filter(i => i.type !== 'Source').length;
+        onBedCountChange(count);
+    }
   };
 
   const handleDragEnd = (e: any, id: number) => {
     setItems(items.map(i => i.id === id ? { ...i, x: e.target.x(), y: e.target.y() } : i));
   };
 
-  // --- 3. NEW MATH: MANHATTAN DISTANCE ---
-  // Calculates distance assuming pipes only travel at 90-degree angles
+  // --- 5. MANHATTAN DISTANCE ---
   const getManhattanDistance = (startId: number, endId: number) => {
     const start = items.find((i) => i.id === startId);
     const end = items.find((i) => i.id === endId);
     if (!start || !end) return "0";
-    
-    // Distance = |x_difference| + |y_difference|
     const dist = Math.abs(end.x - start.x) + Math.abs(end.y - start.y);
     return (dist / pixelsPerMeter).toFixed(2);
   };
@@ -184,7 +200,7 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
           <Layer>
             {imageSrc && <URLImage src={imageSrc} scale={0.5} />}
 
-            {/* RENDER DXF LINES */}
+            {/* DXF LINES */}
             {dxfLines.length > 0 && (
                 <Group x={100} y={500} scaleX={dxfScale} scaleY={dxfScale}>
                     {dxfLines.map((line, i) => (
@@ -198,57 +214,20 @@ export default function FloorPlanDesigner({ currentRoomType, onBedCountChange }:
                 </Group>
             )}
 
-            {/* --- 4. ORTHOGONAL PIPES RENDERING --- */}
+            {/* ORTHOGONAL PIPES */}
             {connections.map((conn) => {
                 const start = items.find(i => i.id === conn.start);
                 const end = items.find(i => i.id === conn.end);
                 if (!start || !end) return null;
 
-                // ROUTING LOGIC:
-                // Instead of a direct line, we create points for an "L" or "Step" shape.
-                // We go horizontal first (midX), then vertical.
                 const midX = (start.x + end.x) / 2;
-                const points = [
-                    start.x, start.y, // Point A (Start)
-                    midX, start.y,    // Point B (Turn 1)
-                    midX, end.y,      // Point C (Turn 2)
-                    end.x, end.y      // Point D (End)
-                ];
+                const points = [start.x, start.y, midX, start.y, midX, end.y, end.x, end.y];
 
                 return (
                     <Group key={conn.id}>
-                        <Line 
-                            points={points} 
-                            stroke="#3b82f6" 
-                            strokeWidth={4} 
-                            lineCap="round" 
-                            lineJoin="round"
-                            shadowColor="rgba(0,0,0,0.1)"
-                            shadowBlur={2}
-                            shadowOffset={{x: 2, y: 2}}
-                        />
-                        {/* Label placed in the middle of the run */}
-                        <Text 
-                            x={midX + 5} 
-                            y={(start.y + end.y)/2} 
-                            text={`${getManhattanDistance(conn.start, conn.end)}m`} 
-                            fontSize={12} 
-                            fontStyle="bold" 
-                            fill="#1e3a8a"
-                            padding={4}
-                            fillAfterStrokeEnabled={true}
-                            stroke="white"
-                            strokeWidth={3}
-                        />
-                         <Text 
-                            x={midX + 5} 
-                            y={(start.y + end.y)/2} 
-                            text={`${getManhattanDistance(conn.start, conn.end)}m`} 
-                            fontSize={12} 
-                            fontStyle="bold" 
-                            fill="#1e3a8a"
-                            padding={4}
-                        />
+                        <Line points={points} stroke="#3b82f6" strokeWidth={4} lineCap="round" lineJoin="round" shadowColor="rgba(0,0,0,0.1)" shadowBlur={2} shadowOffset={{x: 2, y: 2}}/>
+                        <Text x={midX + 5} y={(start.y + end.y)/2} text={`${getManhattanDistance(conn.start, conn.end)}m`} fontSize={12} fontStyle="bold" fill="#1e3a8a" padding={4} fillAfterStrokeEnabled={true} stroke="white" strokeWidth={3}/>
+                        <Text x={midX + 5} y={(start.y + end.y)/2} text={`${getManhattanDistance(conn.start, conn.end)}m`} fontSize={12} fontStyle="bold" fill="#1e3a8a" padding={4}/>
                     </Group>
                 );
             })}
